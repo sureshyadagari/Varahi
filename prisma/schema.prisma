@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    // Painting, Hardware, Plumbing, Electrical
+  products  Product[]
+  createdAt DateTime @default(now())
+}
+
+model Product {
+  id          String     @id @default(cuid())
+  name        String
+  sku         String?    // optional code
+  categoryId  String
+  category    Category   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  costPrice   Float      // cost per unit (for profit calculation)
+  sellingPrice Float     // default selling price
+  quantity    Int        @default(0)  // current stock
+  unit           String     @default("pcs")  // pcs, kg, meter, box, etc.
+  minStock       Int?       // alert when below this
+  brand          String?    // product brand
+  purchasedFrom  String?    // supplier / purchased from
+  saleItems      SaleItem[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Sale {
+  id              String     @id @default(cuid())
+  saleDate        DateTime   @default(now())  // date of sale
+  totalAmount     Float      @default(0)
+  totalProfit     Float      @default(0)
+  note            String?
+  customerName    String?    // optional, for reference
+  customerAddress String?    // optional, for reference
+  items           SaleItem[]
+  createdAt       DateTime   @default(now())
+}
+
+model SaleItem {
+  id          String   @id @default(cuid())
+  saleId      String
+  sale        Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Int
+  unitPrice   Float    // price at time of sale
+  total       Float    // quantity * unitPrice
+  costPrice   Float    // cost at time of sale (for profit)
+  profit      Float    // (unitPrice - costPrice) * quantity
+  createdAt   DateTime @default(now())
+}
