@@ -2,9 +2,12 @@
 
 import { useState, useMemo } from "react";
 
+type Category = { id: string; name: string };
+
 type Product = {
   id: string;
   name: string;
+  categoryId: string;
   brand: string | null;
   category: { name: string };
   costPrice: number;
@@ -15,17 +18,22 @@ type Product = {
   purchasedFrom: string | null;
 };
 
-export function ProductSearchTable({ products }: { products: Product[] }) {
+export function ProductSearchTable({ products, categories }: { products: Product[]; categories: Category[] }) {
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
   const [filterBrand, setFilterBrand] = useState("");
   const [filterPurchasedFrom, setFilterPurchasedFrom] = useState("");
+  const [editProduct, setEditProduct] = useState<Product | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
+  const [deleteProduct, setDeleteProduct] = useState<Product | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const filterOptions = useMemo(() => {
-    const categories = [...new Set(products.map((p) => p.category.name))].sort();
+    const categoriesList = [...new Set(products.map((p) => p.category.name))].sort();
     const brands = [...new Set(products.map((p) => p.brand).filter(Boolean))].sort() as string[];
     const purchasedFromList = [...new Set(products.map((p) => p.purchasedFrom).filter(Boolean))].sort() as string[];
-    return { categories, brands, purchasedFromList };
+    return { categoriesList, brands, purchasedFromList };
   }, [products]);
 
   const filtered = useMemo(() => {
@@ -50,6 +58,68 @@ export function ProductSearchTable({ products }: { products: Product[] }) {
     setFilterCategory("");
     setFilterBrand("");
     setFilterPurchasedFrom("");
+  }
+
+  function openEdit(p: Product) {
+    setEditProduct(p);
+    setEditForm({
+      name: p.name,
+      categoryId: p.categoryId,
+      brand: p.brand ?? "",
+      purchasedFrom: p.purchasedFrom ?? "",
+      costPrice: String(p.costPrice),
+      sellingPrice: String(p.sellingPrice),
+      quantity: String(p.quantity),
+      unit: p.unit,
+      minStock: p.minStock != null ? String(p.minStock) : "",
+    });
+    setError(null);
+  }
+
+  async function saveProduct() {
+    if (!editProduct) return;
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/products/${editProduct.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editForm.name.trim(),
+          categoryId: editForm.categoryId || undefined,
+          brand: editForm.brand.trim() || null,
+          purchasedFrom: editForm.purchasedFrom.trim() || null,
+          costPrice: editForm.costPrice === "" ? undefined : Number(editForm.costPrice),
+          sellingPrice: editForm.sellingPrice === "" ? undefined : Number(editForm.sellingPrice),
+          quantity: editForm.quantity === "" ? undefined : Number(editForm.quantity),
+          unit: editForm.unit || undefined,
+          minStock: editForm.minStock === "" ? null : Number(editForm.minStock),
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      setEditProduct(null);
+      window.location.reload();
+    } catch {
+      setError("Failed to update product.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function confirmDeleteProduct() {
+    if (!deleteProduct) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/products/${deleteProduct.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete");
+      setDeleteProduct(null);
+      window.location.reload();
+    } catch {
+      setError("Failed to delete product.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -79,7 +149,7 @@ export function ProductSearchTable({ products }: { products: Product[] }) {
         )}
       </div>
 
-      {/* Filters: Category, Brand, Purchased from */}
+      {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-[120px]">
           <label className="label text-xs">Category</label>
@@ -90,7 +160,7 @@ export function ProductSearchTable({ products }: { products: Product[] }) {
             aria-label="Filter by category"
           >
             <option value="">All</option>
-            {filterOptions.categories.map((c) => (
+            {filterOptions.categoriesList.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
@@ -141,6 +211,7 @@ export function ProductSearchTable({ products }: { products: Product[] }) {
           ? `${products.length} product(s)`
           : `${filtered.length} of ${products.length} product(s)`}
       </p>
+      {error && <p className="text-sm text-red-600">{error}</p>}
       <div className="card overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
@@ -155,6 +226,7 @@ export function ProductSearchTable({ products }: { products: Product[] }) {
                 <th className="px-4 py-3 font-medium">Unit</th>
                 <th className="px-4 py-3 font-medium">Min</th>
                 <th className="hidden px-4 py-3 font-medium sm:table-cell">Purchased from</th>
+                <th className="px-4 py-3 font-medium w-24">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -181,6 +253,12 @@ export function ProductSearchTable({ products }: { products: Product[] }) {
                   <td className="hidden px-4 py-3 text-stone-600 sm:table-cell">
                     {p.purchasedFrom ?? "–"}
                   </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      <button type="button" onClick={() => openEdit(p)} className="text-brand-600 hover:underline text-xs">Edit</button>
+                      <button type="button" onClick={() => { setDeleteProduct(p); setError(null); }} className="text-red-600 hover:underline text-xs">Delete</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -192,6 +270,85 @@ export function ProductSearchTable({ products }: { products: Product[] }) {
           </p>
         )}
       </div>
+
+      {/* Edit product modal */}
+      {editProduct && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4">
+          <div className="card w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Edit product</h2>
+              <button type="button" onClick={() => setEditProduct(null)} className="text-stone-400 hover:text-stone-600">✕</button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="label">Name</label>
+                <input value={editForm.name ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))} className="input" />
+              </div>
+              <div>
+                <label className="label">Category</label>
+                <select value={editForm.categoryId ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, categoryId: e.target.value }))} className="input">
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="label">Brand</label>
+                  <input value={editForm.brand ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, brand: e.target.value }))} className="input" />
+                </div>
+                <div>
+                  <label className="label">Purchased from</label>
+                  <input value={editForm.purchasedFrom ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, purchasedFrom: e.target.value }))} className="input" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="label">Cost (₹)</label>
+                  <input type="number" step="0.01" min="0" value={editForm.costPrice ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, costPrice: e.target.value }))} className="input" />
+                </div>
+                <div>
+                  <label className="label">Selling (₹)</label>
+                  <input type="number" step="0.01" min="0" value={editForm.sellingPrice ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, sellingPrice: e.target.value }))} className="input" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="label">Quantity</label>
+                  <input type="number" min="0" value={editForm.quantity ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, quantity: e.target.value }))} className="input" />
+                </div>
+                <div>
+                  <label className="label">Unit</label>
+                  <input value={editForm.unit ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, unit: e.target.value }))} className="input" placeholder="pcs" />
+                </div>
+              </div>
+              <div>
+                <label className="label">Min stock (alert)</label>
+                <input type="number" min="0" value={editForm.minStock ?? ""} onChange={(e) => setEditForm((f) => ({ ...f, minStock: e.target.value }))} className="input" placeholder="Optional" />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button type="button" onClick={saveProduct} className="btn-primary" disabled={loading}>{loading ? "Saving…" : "Save"}</button>
+              <button type="button" onClick={() => setEditProduct(null)} className="btn-secondary">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete product confirm */}
+      {deleteProduct && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4">
+          <div className="card w-full max-w-sm">
+            <h2 className="text-lg font-semibold mb-2">Delete this product?</h2>
+            <p className="text-sm text-stone-600 mb-2">“{deleteProduct.name}” will be removed permanently. This cannot be undone.</p>
+            <p className="text-sm text-amber-600 mb-4">If this product was used in any sale, those records remain; only the product entry is deleted.</p>
+            <div className="flex gap-2">
+              <button type="button" onClick={confirmDeleteProduct} className="btn-primary bg-red-600 hover:bg-red-700" disabled={loading}>{loading ? "Deleting…" : "Delete"}</button>
+              <button type="button" onClick={() => setDeleteProduct(null)} className="btn-secondary">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

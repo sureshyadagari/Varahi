@@ -20,7 +20,7 @@ export default async function ProductsPage() {
         <ProductForm categories={categories} />
       </div>
 
-      <ProductSearchTable products={products} />
+      <ProductSearchTable products={products} categories={categories} />
     </div>
   );
 }
